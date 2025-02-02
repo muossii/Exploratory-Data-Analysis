@@ -1,0 +1,93 @@
+---
+title: "EDA_FA1_KHAFAJI"
+author: "Mostafa Khafaji"
+date: "2025-02-02"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(gridExtra)
+
+```
+
+## Data
+
+We will be using the CYTOF_ONE_EXPERIMENT dataset, which we will load using the following:
+
+```{r Cytof Dataset}
+data_cytof <- read.csv("cytof_one_experiment.csv")
+head(data_cytof)
+
+```
+---
+
+## Looking at KIR3DL1 Data Column
+
+Let's look at the KIR3DL1 Column using a histogram, and a density estimation plot
+
+```{r KIR3DL1}
+
+# Create histogram on KIR3DL1 column
+Hist_plot <- ggplot(data_cytof, aes(x=KIR3DL1)) + 
+  geom_histogram(alpha=0.7, binwidth = 0.5, color = "black", fill="darkblue")+
+  geom_vline( aes(xintercept = median(KIR3DL1, na.rm = TRUE)), color = "black", linetype="dashed") +
+  
+  # create labels
+  ggtitle("Histogram of KIR3DL1 column") +
+  ylab("Frequency") +
+  xlab("KIR3DL1 value")+
+
+  # show negative numbers for better visualization
+  scale_x_continuous( limits = c(-1, 10) )
+  
+
+dens_plot <- ggplot(data_cytof, aes(x=KIR3DL1)) + 
+  geom_density(alpha=0.7, color = "black", fill="maroon")+
+  geom_vline( aes(xintercept = median(KIR3DL1, na.rm = TRUE)), color = "black", linetype="dashed") +
+  
+  # create labels
+  ggtitle("Density Plot of KIR3DL1 column") +
+  ylab("Density") +
+  xlab("KIR3DL1 value")+
+  
+  # show negative numbers for better visualization
+  scale_x_continuous( limits = c(-1, 10) )
+
+grid.arrange(Hist_plot, dens_plot, ncol = 2)
+```
+
+The histogram and the density plot of KIR3DL1 shows us that most of the values are negative. The data is then heavily skewed to the right, in this case indicating that most values of the KIR3DL1 are close to zero. The distribution is also leptokurtic, or has a positive kurtosis, showing that, as the median line have shown and as said earlier, that most of the numbers are negative, and are close to zero ($x>-1$). 
+
+---
+
+## Looking at KIR3DL1 and GranzymeB Data
+
+```{r}
+ggplot(data_cytof, aes(x=GranzymeB)) + 
+  geom_histogram(alpha=0.7, binwidth = 0.5, color = "black", fill="darkblue")+
+  geom_vline( aes(xintercept = median(GranzymeB, na.rm = TRUE)), color = "black", linetype="dashed") +
+  
+  # create labels
+  ggtitle("Histogram of KIR3DL1 column") +
+  ylab("Frequency") +
+  xlab("KIR3DL1 value")
+```
+
+```{r Two Columns Plot}
+
+qq_df <- as.data.frame(qqplot(data_cytof$KIR3DL1, data_cytof$GranzymeB, plot.it = FALSE))
+
+ggplot(qq_df, aes(x = x, y=y)) +
+  geom_point()+
+  xlab("KIR3DL1")+ylab("GranzymeB")+
+  geom_abline(slope = 1, intercept = min(qq_df$x), color="red", linetype="dashed")
+  
+
+
+```
+
+The Q-Q plot shows us that the distribution of GranzymeB is skewed to the left, compared to the distribution of KIR3DL1. The vice-versa is also applicable, as we have seen previously: that KIR3DL1 is much more skewed to the right compared to the distribution of GranzymeB. This is shown by the curve at the right end of the graph, where the q-q plot is above the reference line, showing what has been said earlier. At the left part of the graph, we can see that the q-q plot is below the reference line, showing, again, that the distribution of GranzymeB is, again, skewed more to the left when compared to that of KIR3DL1.
