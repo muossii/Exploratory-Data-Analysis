@@ -1,0 +1,80 @@
+---
+title: "EDA_FA2_KHAFAJI"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(tidyverse)
+library(dcldata)
+
+```
+# Analysing the Cytof data set
+
+## 1 
+Loading and Pivoting
+
+We will be manipulating the "Cytof" dataset into something that is easier to run an analysis on. 
+
+To do this, we will have to use the pivot longer function on.
+
+```{r load and pivot}
+cytof_data <- read.csv("../cytof_one_experiment.csv")
+
+cytof_pivot <- cytof_data %>%
+  pivot_longer(cols = colnames(cytof_data), names_to = 'protein_identity', values_to = 'protein_level')
+
+
+head(cytof_pivot)
+```
+
+## 2.
+
+Let's find the median protein level and the median absolute deviation for each protein identity.
+
+```{r median and mad}
+cytof_median_summarized <- cytof_pivot %>%
+  group_by(protein_identity) %>%
+  summarise(median_protein_level = median(protein_level), median_absolute_deviation = mad(protein_level))
+
+cytof_median_summarized
+```
+
+## 3. 
+
+Plotting median absolute deviation vs median protein level, also known as an spreadlocation plot.
+
+```{r spreadlocation}
+ggplot(data = cytof_median_summarized) +
+  geom_point(mapping = aes(x=median_absolute_deviation, y=median_protein_level))+
+  geom_abline(slope = 1, intercept = 0, color = "red")
+
+```
+The plot shows that there is little to no overarching trend between the median absolute deviation and the median protein levels. However, we can see little clusters form, which indicate that these proteins have similar levels of importance with regards to physiology.
+
+There are some proteins that have a relatively high median protein level, but have a deviation smaller than 1, which would indicate that these proteins are important to the human physiology.
+
+
+# 4. Practicing Pivoting
+
+Let's load the practice data example_gymnastics_2 from dcldata:
+
+```{r gymnastics data}
+head(example_gymnastics_2)
+
+```
+
+Let's pivot this longer, creating columns for country, event, year, and score.
+
+```{r}
+
+gymnastics_df <- example_gymnastics_2 %>%
+  pivot_longer(cols = -c("country"), names_to = 'event_year', values_to = 'score') %>%
+  separate_wider_delim(event_year, '_', names = c('event', 'year') )
+
+gymnastics_df
+
+```
+
+We have successfully created a better table for the data, creating columns for their country, the event, the year, and the respective score. This way, we can analyze the data better.
