@@ -1,0 +1,113 @@
+---
+title: "EDA_FA3_KHAFAJI"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(tidyverse)
+library(dcldata)
+
+```
+
+# FA3 Exploring the Diamonds dataset
+
+Let's explore the diamonds dataset from the tidyverse library
+
+
+```{r diamonds load}
+diamonds
+```
+
+## 1. Create a histogram
+
+Let's create a histogram of the dataset, but using the layers function of ggplot.
+
+```{r diamonds histogram}
+diamonds %>% ggplot(aes(x=carat)) +
+  layer(
+    geom = "bar", 
+    stat = "bin",
+    position = "identity",
+    params = list(
+      binwidth = 0.25,
+      color = "blue",
+      fill = "black",
+      alpha = 0.9
+    )
+  )
+
+```
+
+This is a classic histogram, containing details on the amount of diamonds with a given carat, and hence it's distribution.
+
+## 2. Create a Histogram with point or line geom
+
+We can also do a histogram, but with a line or point geom, by customizing the geom parameter on the layer function parameters.
+
+```{r carat histogram with line or point}
+diamonds %>% ggplot(aes(x=carat)) +
+  layer(
+    geom = "point", 
+    stat = "bin",
+    position = "identity",
+    params = list(
+      binwidth = 0.25,
+      color = "blue",
+      fill = "black",
+      alpha = 0.9
+    )
+  )
+
+```
+
+This shows that we can get the same information as a classic histogram, with a different geometry. Here, using points gives us a better view of the distribution.
+
+## 3. To your original histogram (1.) add an aesthetic mapping from one of the factor variables to the fill or color aesthetic.
+
+Let's add the color values as an aesthetic mapping, specifically for the color aesthetic.
+
+
+```{r histogram with extra aesthetic}
+diamonds %>% ggplot(aes(x=carat, fill=color)) +
+  layer(
+    geom = "bar", 
+    stat = "bin",
+    position = "identity",
+    params = list(
+      binwidth = 0.25,
+      color = "black",
+      alpha = 0.9
+    )
+  )
+```
+
+Notice how the y-axis of this histogram is now less than our first histogram. This is because each subgroup, our diamond's color, is layered on top of each other. For example, there are around 400 to 500 diamonds of carat 1 with a color of J, while there are around 900 diamonds of carat 1 with a color of I. 
+
+When the identity position is used, the subgroup with the least count (or least value in the y-axis) is at the front, while the subgroup with the most count is layered at the back.
+
+## 4. Changing the position parameter in the layer function
+
+We have the "identity" position as the default, but let's find out what will happen if we change that. Let's try nudge.
+
+```{r histogram different position}
+diamonds %>% ggplot(aes(x=carat, fill=color)) +
+  layer(
+    geom = "bar", 
+    stat = "bin",
+    position = "stack",
+    params = list(
+      binwidth = 0.25,
+      color = "black",
+      alpha = 0.9
+    )
+  )
+
+```
+
+
+
+After stacking them, we see the same y-axis values from this graph and our very first histogram. This means that the subgroups of color are stacked against each other when using ' position = "stack." ' This is in contrast to when the position is set to identity, which layers the subgroups on top of each other rather than stacking them.
