@@ -1,0 +1,429 @@
+---
+title: "KHAFAJI_FA6"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(tidyverse)
+library(dcldata)
+library(cowplot)
+library(MASS)
+library(gtsummary)
+library(leaps)
+library(broom)
+library(skimr)
+library(janitor)
+library(caret)
+library(ggcorrplot)
+library(nnet)
+set.seed(12345)
+```
+
+# FA6 - Customer Segmentation in an E-commerce Business
+
+The situation:
+
+You are working for an e-commerce company, and your task is to segment customers based on their purchasing behavior. The goal is to predict which customer segment a new customer belongs to based on demographic and behavioral data.
+
+the dataset containing the following features:
+
+* Customer ID (Unique Identifier)
+
+* Age (Continuous variable)
+
+* Annual Income (Continuous variable, in thousands of dollars)
+
+* Gender (Categorical: Male/Female)
+
+* Product Category Purchased (Categorical: Electronics, Fashion, Home, Books, Others)
+
+* Average Spend per Visit (Continuous variable, in dollars)
+
+* Number of Visits in Last 6 Months (Discrete variable)
+
+* Customer Segment (Categorical target variable: Budget Shopper, Regular Shopper, Premium Shopper)
+
+The target variable, Customer Segment, has three categories:
+
+* Budget Shopper (Low spenders)
+
+* Regular Shopper (Moderate spenders)
+
+* Premium Shopper (High spenders)
+
+
+## Data exploration
+
+First, let's load the data:
+
+
+```{r load data}
+ecomm_data <- read_csv("customer_segmentation.csv", show_col_types = FALSE) %>% select(-c("Customer ID")) %>% mutate(`Customer Segment` = str_remove(`Customer Segment`, " Shopper"))
+head(ecomm_data)
+
+```
+
+
+Let's also get the summary statistics of the dataset:
+
+```{r summ stats ecomm}
+
+ecomm_data %>% skim()
+```
+
+
+We can see that there are no missing data in our data set. We have also taken the liberty of taking out the Customer ID column, which would not be helpful in our goal. 
+
+We can also see the summary statistics for each column, especially the numerical features. For example, we can see that the median age for customers is 43, that the average annual income is $89,183.73, that the average spending per visit is $104.30, while the median number of visits in the last 6 months is 22.
+
+But to be able to better see the distribution of our features, let's create some visualizations.
+
+Let's start with histograms of the numerical variables, namely Age, Annual Income, Average Spend per Visit, and Number of Visits in the Last 6 Months.
+
+```{r numerical var distributions}
+ecomm_data %>% ggplot(aes(x=Age)) +
+  geom_histogram(binwidth = 2) +
+  ylab("Frequency") +
+  xlab("Age")+
+  ggtitle("Age Histogram")
+
+
+ecomm_data %>% ggplot(aes(x=`Annual Income (K$)`)) +
+  geom_histogram(binwidth = 10) +
+  ylab("Frequency") +
+  xlab("Annual Income (K$)")+
+  ggtitle("Annual Income (K$) Histogram")
+
+
+ecomm_data %>% ggplot(aes(x=`Average Spend per Visit ($)`)) +
+  geom_histogram(binwidth = 10) +
+  ylab("Frequency") +
+  xlab("Average Spend per Visit ($)")+
+  ggtitle("Average Spend per Visit ($) Histogram")
+
+
+ecomm_data %>% ggplot(aes(x=`Number of Visits in Last 6 Months`)) +
+  geom_histogram(binwidth = 2) +
+  ylab("Frequency") +
+  xlab("Number of Visits in Last 6 Months")+
+  ggtitle("Number of Visits in Last 6 Months Histogram")
+```
+
+We can see that our numerical variables exhibit a distribution close to a uniform distribution, with some spikes at certain intervals.
+
+Now, let's check the distribution of our categorical variables: Gender, Product Category Purchased, Customer Segment.
+
+
+```{r categorical var distributions}
+
+ecomm_data %>% ggplot(aes(x=Gender)) +
+  geom_bar() +
+  ylab("Frequency") +
+  xlab("Gender")+
+  ggtitle("Gender Bar Chart")
+
+
+ecomm_data %>% ggplot(aes(x=`Product Category Purchased`)) +
+  geom_bar() +
+  ylab("Frequency") +
+  xlab("Product Category Purchased")+
+  ggtitle("Product Category Purchased Bar Chart")
+
+ecomm_data %>% ggplot(aes(x=`Customer Segment`)) +
+  geom_bar() +
+  ylab("Frequency") +
+  xlab("Customer Segment")+
+  ggtitle("Customer Segment Bar Chart")
+
+```
+
+The plots show that there is slightly more female shoppers than male ones, but the difference is not significant. 
+
+The sales of each product category is also somewhat uniform across all categories.
+
+For customer segment, the distribution is also uniform.
+
+
+let's then get the correlation plot of the continuous variables.
+
+
+```{r correlational plot}
+
+ecomm_data %>% 
+  select(c("Age", "Annual Income (K$)", "Average Spend per Visit ($)", "Number of Visits in Last 6 Months")) %>%
+  cor() %>%
+  ggcorrplot()
+  
+```
+
+As we can see from the correlation plot, the numerical variables do not actually have any correlation with each other.
+
+## Data Preprocessing
+
+Let's now encode our categorical variables.
+
+Let's start by label encoding our gender variable:
+
+```{r gender encoding}
+ecomm_data <- ecomm_data %>% mutate(Gender = ifelse(Gender == "Male", 0, 1))
+ecomm_data %>% head()
+```
+
+
+Now, let's one-hot encode for the product category variable, with the "Others" category as reference:
+
+```{r one hot product category}
+
+ecomm_data <- ecomm_data %>% 
+  mutate(
+    product.books = ifelse(`Product Category Purchased` == "Books", 1, 0 ),
+    product.electronics = ifelse(`Product Category Purchased` == "Electronics", 1, 0 ),
+    product.fashion = ifelse(`Product Category Purchased` == "Fashion", 1, 0 ),
+    product.home = ifelse(`Product Category Purchased` == "Home", 1, 0 )
+  ) %>% select(-c("Product Category Purchased"))
+head(ecomm_data)
+
+```
+
+
+
+Let's then scale the Age, annual income, average spend per visit, and number of visits using the minmax scaler.
+
+```{r minmax scaler}
+
+ecomm_data_scaled <- ecomm_data %>% mutate(across(
+  c("Age", "Annual Income (K$)", "Average Spend per Visit ($)", "Number of Visits in Last 6 Months"), 
+  ~ (. - min(., na.rm = TRUE))/ (max(., na.rm = TRUE) - min(., na.rm = TRUE))
+))
+
+head(ecomm_data_scaled)
+
+```
+
+then let's finally split the dataset to be used in the creation of our model.
+
+```{r split data}
+set.seed(12345)
+
+train_index <- createDataPartition(ecomm_data_scaled$`Customer Segment`, p=0.8, list=FALSE)
+train_data <- ecomm_data_scaled[train_index, ]
+test_data <- ecomm_data_scaled[-train_index, ]
+
+```
+
+
+## Model Building
+
+Now, let's try building a Multinomial Regression model using nnet.
+
+```{r multinom create model}
+ctrl <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = mnLogLoss
+)
+
+
+model <- train(
+  `Customer Segment` ~ .,
+  data = train_data,
+  method = "multinom",
+  trControl = ctrl,
+  metric = "logLoss",
+  trace = FALSE
+)
+
+summary(model)
+
+```
+
+
+## Model Evaluation
+
+Let's first create predictions using our model, we can then use this for checking the performance of the model.
+
+```{r prediction}
+
+predicted_classes <- predict(model, newdata = test_data)
+actual <- test_data$`Customer Segment`
+
+predicted_probs <- predict(model, newdata = test_data, type = "prob")
+
+```
+
+
+
+Then, using the caret library, we can get the confusion matrix, accuracy, precision, recall, and the F1 score.
+
+
+```{r conf matrix}
+conf_matrix <- confusionMatrix(as.factor(predicted_classes), as.factor(actual), mode = "prec_recall")
+
+print(conf_matrix)
+
+```
+
+We can see that our created model is no better than guessing between three items of assumed same probabilities (which is 33.3333...%). To be specific the accuracy of the model is 0.3344. 
+
+In predicting if a customer is a budget shopper, the model precision is at 0.3404, which says that only 34% of the predicted "budget shopper" are actually budget shoppers. The model's recall is then at 0.3883, which says that the model only correctly predicts 39% of the total budget shoppers. An F1 score of 0.3682 highlights the model's unreliability in predicting if a customer is a budget shopper.
+
+In predicting the premium shopper class, the model has a precision of 0.31915, a recall of 0.21552, and an F1 score of 0.25729.
+
+for predicting the Regular Shopper class, the precision is 0.3349, the recall is 0.3952, and an F1 score of 0.3626.
+
+```{r logloss}
+
+logloss <- model$results$logLoss
+
+cat("The log loss are:",
+logloss,
+"For Budget, Premium, and Regular shopper predictions, respectively")
+
+```
+
+The log loss values show that the model isn't doing a good job predicting the class.
+
+
+```{r}
+cm_df <- as.data.frame(conf_matrix$table)
+names(cm_df) <- c("Predicted", "Actual", "Freq")
+
+ggplot(data = cm_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), vjust = 1.5, size = 6) +
+  scale_fill_gradient(low = "lightblue", high = "steelblue") +
+  labs(
+    title = "Confusion Matrix Heatmap",
+    x = "Actual Class",
+    y = "Predicted Class"
+  ) +
+  theme_minimal(base_size = 14)
+
+```
+
+We can see from the confusion matrix heatmap that the model prefers to classify the customers into budget and regular spenders, while shying away from classifying shoppers as premium spenders.
+
+
+## Refinement
+
+We can try to improve our model. One such way is to create interaction variables.
+
+```{r add interaction variables}
+
+ecomm_interaction_scaled <- ecomm_data %>% mutate(
+  age_x_annualIncome = Age * `Annual Income (K$)`,
+  numberVisits_x_AveSpend = `Average Spend per Visit ($)` * `Number of Visits in Last 6 Months`,
+  aveSpend_div_annualIncome = `Average Spend per Visit ($)`/ `Annual Income (K$)` ) %>% 
+  select(-c("Age", "Annual Income (K$)", "Average Spend per Visit ($)", "Number of Visits in Last 6 Months")) %>%
+  mutate(across(
+  c("age_x_annualIncome", "numberVisits_x_AveSpend", "aveSpend_div_annualIncome"), 
+  ~ (. - min(., na.rm = TRUE))/ (max(., na.rm = TRUE) - min(., na.rm = TRUE))
+))
+
+train_index <- createDataPartition(ecomm_interaction_scaled$`Customer Segment`, p=0.8, list=FALSE)
+train_data <- ecomm_interaction_scaled[train_index, ]
+test_data <- ecomm_interaction_scaled[-train_index, ]
+
+
+ctrl <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = mnLogLoss
+)
+
+
+model <- train(
+  `Customer Segment` ~ .,
+  data = train_data,
+  method = "multinom",
+  trControl = ctrl,
+  metric = "logLoss",
+  trace = FALSE
+)
+
+summary(model)
+
+print("\n\n")
+
+predicted_classes <- predict(model, newdata = test_data)
+actual <- test_data$`Customer Segment`
+predicted_probs <- predict(model, newdata = test_data, type = "prob")
+
+conf_matrix <- confusionMatrix(as.factor(predicted_classes), as.factor(actual), mode = "prec_recall")
+
+print(conf_matrix)
+
+print("\n\n")
+
+logloss <- model$results$logLoss
+
+cat("The log loss are:",
+logloss,
+"For Budget, Premium, and Regular shopper predictions, respectively")
+
+m_df <- as.data.frame(conf_matrix$table)
+names(cm_df) <- c("Predicted", "Actual", "Freq")
+
+ggplot(data = cm_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), vjust = 1.5, size = 6) +
+  scale_fill_gradient(low = "lightblue", high = "steelblue") +
+  labs(
+    title = "Confusion Matrix Heatmap",
+    x = "Actual Class",
+    y = "Predicted Class"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+
+We created the following variables: age times annual income, number of visits times average spending per visit,
+  and the average spending per visit divided by annual income. We then removed the original columns to avoid co linearity.
+
+The result, particularly the accuracy, precision, recall, and F1-score, shows that there is very little improvement, if any. The log loss statistics prove that further.
+
+
+## Reporting
+
+
+Our exploratory data analysis showed that the distribution of the variables are uniformly distributed. It is perhaps due to this that our multinomial logistic regression model is not able to create any meaningful performance: Its accuracy, precision, recall, and F1-score, is not far from 0.333..., a performance that is no better than guessing between three options given equal probabilities. The log loss shows no promise either, with scores close to 1.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
