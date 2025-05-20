@@ -1,0 +1,573 @@
+---
+title: "AFUNDAR_KHAFAJI_RODILLAS_SA2_EDA"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(tidyverse)
+library(dcldata)
+library(cowplot)
+library(MASS)
+library(gtsummary)
+library(leaps)
+library(broom)
+library(skimr)
+library(janitor)
+library(caret)
+library(ggcorrplot)
+library(nnet)
+library(car)
+library(ggplot2)
+library(VGAM)
+library(svyVGAM)
+library(pscl)
+library(ordinal)
+
+set.seed(12345)
+```
+
+# Analyzing Reproductive Health and Behavior Patterns Using NSFG 2022–2023
+
+The CDC National Center for Health Statistics provided the data set for the 2022-2023 National Survey for Family Growth. 
+
+The data set can be accessed at https://www.cdc.gov/nchs/nsfg/nsfg-2022-2023-puf.htm.
+
+There are three data sets available:
+
+Female Respondent File, Female Pregnancy File, and Male Respondent File.
+
+The Female respondent file has 5,586 observations, with 1,912 variables, the Female Pregnancy File has 8,247, with 111 variables, while the Male respondent file has 4,371, with 1,157 variables.
+
+The contents or each are as follows:
+
+FEMALE RESPONDENT FILE –
+(1 record for each of the 5,586 female respondents in 2022-2023)
+*Respondent ID Number (randomized, with no linkage to geography) and selected
+household screener variables
+* Raw and Blaise-computed variables from the female questionnaire sections A-J
+  A. Demographic Characteristics; Household Roster Summary Variables (not full
+  roster); Childhood Background
+  B. Pregnancy & Birth History; Adoption & Nonbiological Children
+  C. Marital & Relationship History; 1st Sexual Intercourse
+  D. Sterilizing Operations and Impaired Fecundity
+  E. Contraceptive History and Pregnancy Wantedness
+  F. Family Planning and Medical Services
+  G. Desires and Intentions for Future Births
+  H. Medical Help to Have a Baby; General & Reproductive Health
+  I. Health insurance; Residence and place of birth; Religion; Past and Current work
+  (R and current spouse/partner)
+  J. Computer-Assisted Self-Interview (CASI) – Health status; body mass index;
+  opposite-sex and same-sex behavior; sexual orientation and attraction; STD/HIV
+  risk behaviors; adverse and positive childhood events; household income and
+  sources of income; COVID-19 experience
+* Recodes and Imputation Flags based on sections A-J
+(including selected pregnancy variables shown for each woman, if she had any
+pregnancies; imputation flags show whether the value of a recode variable was imputed
+for that case)
+* Weights and variables for variance estimation
+* Date of interview (century month) and related variables
+
+MALE RESPONDENT FILE –
+(1 record for each of the 4,371 male respondents in 2022-2023)
+* Respondent ID Number (randomized, with no linkage to geography) and selected
+household screener variables
+* Raw and Blaise-computed variables from questionnaire sections A-Ks
+  A. Demographic Characteristics; Household Roster Summary Variables (not full
+  roster); Childhood Background
+  B. Ever Sex with a Female, Sex Communication and Education, Vasectomy and
+  Physical Ability to Father Children, Number of Female Sexual Partners,
+  Enumeration and Relationship With Up To 3 Recent (Or Last) Female Sexual
+  Partner(s)
+  C. Current marriage or cohabitation
+  D. Recent (or last) female sexual partners
+  E. First Former Wife; First Female Cohabiting Partner; First Female Sexual Partner
+  F. Biological Children Ever Fathered; Nonbiological Children Living with R; Other
+  Pregnancies Fathered
+  G. Parenting activities with coresidential and non-coresidential children
+  H. Desires and intentions for future biological children
+  I. Health insurance; Health conditions and health services
+  J. Residence and place of birth; Religion; Past and Current work (R and current
+  spouse/partner)
+  K. CASI: Health status; body mass index; opposite-sex and same-sex behavior;
+  sexual orientation and attraction; STD/HIV risk behaviors; adverse and positive
+  childhood events; household income and sources of income; COVID-19
+  experience
+* Recodes and Imputation Flags based on sections A-K
+* Weights and variables for variance estimation
+* Date of interview (century month) and related variables
+
+
+For this study, let's use the male and female respondent files, getting the following recoded variables:
+
+Categorical Variables: 
+* Gender (by mutation, 0 for male, 1 for females), to view potential differences with gender
+* RMARITAL (Informal marital status relative to opposite-sex spouses), to view if informal marital status, and therefore close relationship with opposite, yields effects.
+* HHFAMTYP (Type of household/family structure), if current family structure has an effect on family growth
+* RELIGION (R's Current Religion), if religion, and their created mindset, provides an effect in family growth
+* INTCTFAM (Intact status of childhood family), if family relationship growing up affect current family growth
+
+Numerical Variables: 
+* AGER (R's Age at interview) If family growth is related to age.
+* NUMKDHH (Number of biological/adopted/related/legal children under age 18 in household), if the number of children with age < 18 yields an effect on family growth.
+* NUMFMHH (Number of family members in household), if the number of family members in a household has an effect on family growth.
+* FMARNO (Number of times R has been married to opposite sex), if the number of marriage has an effect on family growth.
+
+
+Ordinal Variables: 
+* TOTINCR (Total income of R’s family Binned), if total income affects family growth.
+* HIEDUC (Highest completed year of school or highest degree received), if the highest educational attainment affects family growth.
+
+We can then use Age, gender, and education as respondent demographics.
+
+Legend of recoded variables can be accessed from here:
+ Males: https://www.cdc.gov/nchs/data/nsfg/recodespecs/2022-2023-NSFG-Male-RecodeSpecs.pdf
+ Females: https://www.cdc.gov/nchs/data/nsfg/recodespecs/2022-2023-NSFG-FemResp-RecodeSpecs.pdf
+
+We also included the given weight of the data observation (WGT2022_2023), and sampling stratum (VEST) and cluster (VECL) to obtain correct standard errors for their estimates.
+
+```{r loading data}
+
+columns <- c("AGER", "HIEDUC", "RMARITAL", "HHFAMTYP", "RELIGION", "NUMKDHH", "NUMFMHH", "TOTINCR", "HIEDUC", "INTCTFAM", "FMARNO", "WGT2022_2023", "VEST", "VECL")
+
+FemRespData_2022_2023 <- read_csv("NSFG_2022_2023_FemRespPUFData.csv", guess_max = Inf, show_col_types = FALSE) %>% select(columns) %>% mutate(GENDER = 1)
+
+MaleRespData_2022_2023 <- read_csv("NSFG_2022_2023_MaleRespPUFData.csv", guess_max = Inf, show_col_types = FALSE) %>% select(columns) %>% mutate(GENDER = 0)
+
+RespData <- rbind(FemRespData_2022_2023, MaleRespData_2022_2023)
+
+
+```
+
+
+```{r}
+
+head(RespData)
+
+```
+
+
+```{r}
+
+str(RespData)
+```
+
+```{r}
+
+colSums(is.na(RespData))
+```
+There are 0 NAs seen in the columns for RespData
+
+
+```{r}
+
+columns <- c("GENDER", "RMARITAL", "HHFAMTYP", "RELIGION", "INTCTFAM")
+
+RespData[columns]<- lapply(RespData[columns], as.factor)
+
+str(RespData)
+
+```
+
+Derive new variables from exisiting ones to explore various relationships.
+
+
+Create Age group to capture non-linear effects (e.g. mid-life, early adulthood, etc... )
+
+```{r}
+RespData$AgeGroup <- cut(as.numeric(RespData$AGER), breaks = c(0, 25, 35, 45, 55, 65, Inf),
+                         labels = c("<=25", "26-35", "36-45", "46-55", "56-65", "65+"),
+                         right = FALSE)
+
+
+```
+
+
+## Exploratory Data Analysis
+
+Gender Distribution
+
+```{r}
+
+
+gender_counts <- RespData %>%
+  count(GENDER) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+ggplot(gender_counts, aes(x="", y=n, fill=GENDER)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  geom_text(aes(label=paste0(round(percentage, 1), "%")), 
+            position=position_stack(vjust=0.5)) + 
+  labs(title="Gender Distribution") 
+
+```
+
+Histogram for Age
+
+```{r}
+
+ggplot(RespData, aes(x = AGER)) +
+  geom_histogram( fill = "skyblue", color = "black", stat="count") +
+  labs(title = "Distribution of Age", x = "Age", y = "Count")
+
+
+```
+
+Histogram of Number of Children in Household
+
+```{r}
+
+ggplot(RespData, aes(x = NUMKDHH)) +
+  geom_histogram( fill = "green", color = "black", stat="count") +
+  labs(title = "Children Under 18 in the Household", x = "Number of Children", y = "Count")
+
+```
+
+Age Distribution by Gender
+
+```{r}
+
+RespData$AGER<-as.numeric(RespData$AGER)
+
+ggplot(RespData, aes(x = factor(GENDER), y = AGER, fill = factor(GENDER))) +
+  geom_boxplot() +
+  labs(title = "Age Distribution by Gender", x = "Gender (0 = Male, 1 = Female)", y = "Age") +
+  scale_fill_manual(values = c("skyblue", "pink"))
+
+```
+There are no apparent outliers in the graph. Moreover, the age group of both the male and female had a mean below 20 yrs old.
+
+
+Income Distribution by Education Level
+
+```{r}
+
+
+ggplot(RespData, aes(x = factor(HIEDUC), y = as.numeric(TOTINCR))) +
+  geom_boxplot(fill = "white") +
+  labs(title = "Income Distribution by Education Level", x = "Education Level", y = "Income") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+As seen on the graph, the highest mean based on income level comes from higher education level such as the 9,10,11. However, it is apparent that there are points from higher education level with below average incomes. This can be seen from the education level 6 onwards.
+
+
+Distribution of Marital Status
+
+```{r}
+ggplot(RespData, aes(x = factor(RMARITAL))) +
+  geom_bar(fill = "red") +
+  labs(title = "Marital Status", x = "Marital Status", y = "Count")
+
+```
+
+As seen on the graph, 6 (idk what it means) is the highest with just shy of 5000 counts. It is then followed by 1 (idk what it also means) with less than 3500 counts. The lowest count for a marital status is 3(idk what it means) with less than 50 counts.
+
+
+```{r}
+
+ggplot(RespData, aes(x = factor(HHFAMTYP))) +
+  geom_bar(fill = "gray", color="black") +
+  labs(title = "Household Type", x = "Household Type", y = "Count")
+
+```
+
+
+As seen on the graph, the highest count for a household type is 1 with less than 5000 counts. This is followed by 3 with less than 2500 counts. The lowest count for a household type is 4 with less than 500 counts.
+
+
+
+## Statistical Analyses
+
+Creating survey design
+(WGT2022_2023), and sampling stratum (VEST)
+
+```{r}
+
+design <- svydesign(
+  ids = ~VECL,
+  strata = ~VEST, 
+  weights = ~WGT2022_2023,
+  data = RespData,
+  nest = TRUE
+)
+
+```
+
+Poisson Regression model
+
+
+```{r}
+
+
+poisson_model_resp<-glm(NUMKDHH~.-RMARITAL, data=RespData, family=poisson(link="log"))
+
+summary(poisson_model_resp)
+
+```
+
+As seen on the summary of the model, HHFAMTYP 3,4, and 5 are statistically significant. Moreover, NUMFMHH is also statistically significant. WGT2022_2023 were slightly significant while HIEDUC were faintly significant. The rest were considered as insignificant by the model. With that, the Null deviance to Residual deviance drop suggest a good fit. However, we expect it to be approximately equal on deviance and degrees of freedom, with our model this not seem to be the case.
+
+
+```{r}
+vif(poisson_model_resp)
+
+```
+
+There are no more multicollinearity amongst the predictors
+
+
+Checking assumptions
+
+```{r}
+
+mean(RespData$NUMKDHH)
+var(RespData$NUMKDHH)
+
+
+```
+Since the mean is lower than var and not mean ≈ variance, then this might not be a good fit for the normal poisson model. Moreover, this shows an overdispersion which violates the assumption check for poisson regression. To note, after doing the poisson model, it seems that the model handled the variability well but created an underdispersion. 
+
+
+```{r}
+
+design_poisson <- svydesign(
+  id = ~VECL,
+  strata = ~VEST,
+  weights = ~WGT2022_2023,
+  data = RespData,
+  nest = TRUE
+)
+
+poisson_model_weighted <- svyglm(
+  NUMKDHH ~ AGER + HIEDUC + HHFAMTYP + RELIGION + INTCTFAM + NUMFMHH + FMARNO + TOTINCR + GENDER,
+  design = design_poisson,
+  family = quasipoisson(link = "log")
+)
+
+summary(poisson_model_weighted)
+
+```
+
+As seen in the model, the deviance < degrees of freedom by a margin. Thus, the model underdisperse the data.
+
+
+```{r}
+poisson_model_weighted
+
+```
+
+Let's create contingency tables for some categorical variables.
+
+For 
+
+```{r contingency}
+
+cat("Contingency table for Informal Marital Status and Gender\n")
+cont_rmarital_gender <- as.data.frame(svytable(~RMARITAL+GENDER, design))
+
+print(cont_rmarital_gender)
+
+
+cat("\n\nContingency table for Informal Marital Status and Household Family Type\n")
+cont_rmarital_hhfamtyp <- as.data.frame(svytable(~RMARITAL+HHFAMTYP, design))
+print(cont_rmarital_hhfamtyp)
+
+
+cat("\n\nContingency table for Informal Marital Status and Religion\n")
+cont_rmarital_religion <- as.data.frame(svytable(~RMARITAL+RELIGION, design))
+print(cont_rmarital_religion)
+
+
+cat("\n\nContingency table for Informal Marital Status and Family Status during Childhood\n")
+cont_rmarital_intctfam <- as.data.frame(svytable(~RMARITAL+INTCTFAM, design))
+print(cont_rmarital_intctfam)
+
+
+
+```
+
+```{r chi square}
+
+chi_rmarital_gender <- svychisq(~RMARITAL+GENDER, design)
+print(chi_rmarital_gender)
+
+chi_rmarital_hhfamtyp <- svychisq(~RMARITAL+HHFAMTYP, design)
+print(chi_rmarital_hhfamtyp)
+
+chi_rmarital_religion <- svychisq(~RMARITAL+RELIGION, design)
+print(chi_rmarital_religion)
+
+chi_rmarital_intctfam <- svychisq(~RMARITAL+INTCTFAM, design)
+print(chi_rmarital_intctfam)
+
+```
+
+
+
+```{r heatmap}
+RespData %>% ggplot(aes(x = RMARITAL, y = GENDER)) +
+  geom_bin2d()+
+  scale_fill_gradient(low = "lightblue", high = "darkred") +
+  labs(title = "Heatmap Informal Marital Status vs Gender", x = "Informal Marital Status", y = "Gender")
+
+RespData %>% ggplot(aes(x = RMARITAL, y = HHFAMTYP)) +
+  geom_bin2d()+
+  scale_fill_gradient(low = "lightblue", high = "darkred") +
+  labs(title = "Heatmap Informal Marital Status vs Household Family Type", x = "Informal Marital Status", y = "Household Family Type")
+
+
+RespData %>% ggplot(aes(x = RMARITAL, y = RELIGION)) +
+  geom_bin2d()+
+  scale_fill_gradient(low = "lightblue", high = "darkred") +
+  labs(title = "Heatmap Informal Marital Status vs Religion", x = "Informal Marital Status", y = "Religion")
+
+RespData %>% ggplot(aes(x = RMARITAL, y = INTCTFAM )) +
+  geom_bin2d()+
+  scale_fill_gradient(low = "lightblue", high = "darkred") +
+  labs(title = "Heatmap Informal Marital Status vs Intact Status of Childhood Family", x = "Informal Marital Status", y = "Intact Status of Childhood Family")
+```
+
+
+```{r}
+set.seed(77777)
+
+n <- nrow(RespData)
+trIndex <- sample(1:n, round(0.8*n))
+train_design <- RespData[trIndex, ]
+test_design <- RespData[-trIndex, ]
+
+```
+
+
+Since the data has classification on income group, which clearly defines order, and is a nominal variable, therefore we can do nominal regression
+
+```{r}
+
+unique(RespData$TOTINCR)
+train_design$TOTINCR <- factor(train_design$TOTINCR, levels = 1:15, ordered = TRUE)
+
+
+
+ordinal_model <- polr(
+  TOTINCR ~ NUMKDHH  + NUMFMHH + HIEDUC + INTCTFAM,
+  data = train_design,
+  Hess = TRUE
+)
+summary(ordinal_model)
+```
+
+For the Pseudo R2
+```{r}
+logLik(ordinal_model)
+
+pR2(ordinal_model)["McFadden"]
+```
+
+
+non weighted multinom
+
+```{r}
+
+RespData$TOTINCR <- factor(RespData$TOTINCR)
+
+
+train_design$TOTINCR <- factor(train_design$TOTINCR)
+test_design$TOTINCR <- factor(test_design$TOTINCR, levels = levels(train_design$TOTINCR))
+
+multilog_model_income <- multinom(
+  HHFAMTYP  ~ FMARNO + HHFAMTYP + RELIGION + AGER + NUMKDHH + NUMFMHH,
+  data = train_design
+)
+summary(multilog_model_income)
+
+
+```
+
+```{r}
+
+test_design$TOTINCR <- factor(test_design$HHFAMTYP , levels = levels(train_design$HHFAMTYP ), ordered = TRUE)
+
+predicted_probs <- predict(multilog_model_income, newdata = test_design, type = "probs")
+predicted_classes <- factor(colnames(predicted_probs)[apply(predicted_probs, 1, which.max)],
+                            levels = levels(test_design$HHFAMTYP ))
+
+actual <- test_design$HHFAMTYP 
+
+cf <- confusionMatrix(predicted_classes, actual)
+print(cf)
+```
+
+```{r}
+accuracy <- cf$overall["Accuracy"]
+precision <- cf$byClass[,"Specificity"]
+recall <- cf$byClass[,"Sensitivity"]
+f1_score <- cf$byClass[,"F1"]
+
+data.frame(
+  Metric = c("Accuracy", "Precision", "Recall", "F-1 Score"),
+  Value = c(accuracy, mean(precision), mean(recall), mean(f1_score))
+)
+
+```
+
+
+
+```{r}
+cf
+```
+
+
+## D. EDA and Multiple Comparisons (Lecture 20)
+
+test conducting: RELIGION (R's Current Religion) based on FMARNO (How many times they have been married to opp sex) and HOUSEHOLD
+```{r}
+
+multi_model <- multinom(RELIGION ~ FMARNO + HHFAMTYP, data = RespData)
+summary(multi_model)
+
+
+```
+
+
+Test Conducting: Interaction between EDUCATION * HOUSEHOLD Structure and predicting the TOTAL INCOME
+```{r}
+model_interact1 <- polr(
+  TOTINCR ~ HIEDUC * HHFAMTYP,
+  data = train_design,
+  Hess = TRUE
+)
+summary(model_interact1)
+```
+
+Test Conducting: Linear Interaction between Number of Family Members to Household type
+```{r}
+model_interact2 <- lm(NUMKDHH ~ NUMFMHH,data = RespData
+)
+summary(model_interact2)
+```
+
+Using Model interact2 lm, we can subject to bonferroni and fdr
+
+```{r}
+pairwise.t.test(RespData$NUMKDHH, RespData$NUMFMHH , p.adjust.method ="bonferroni")
+
+
+```
+
+```{r}
+
+pairwise.t.test(RespData$NUMKDHH, RespData$NUMFMHH, p.adjust.method ="fdr")
+
+```
+
+Discuss risks of Type I error and how adjustments affect conclusions.
+
+Performing multiple tests increases the probability of incorrectly rejecting true null hypotheses (Type I error) due to multiple comparisons. To mitigate this, p-values may be adjusted using Bonferroni or False Discovery Rate (FDR) methods.
+When conducting multiple pairwise comparisons of family size across household types, controlling for Type I error is essential to avoid false positive findings. Without adjustment, you risk overstating significance due to multiple testing. On one case, the Bonferroni adjustment is a conservative method controlling the family-wise error rate. On the otherhand, the FDR adjustment controls the expected proportion of false discoveries.Both adjustments in this analysis yielded highly significant results, indicating strong evidence of differences in family size among household types with a low risk of Type I error.
+
+
